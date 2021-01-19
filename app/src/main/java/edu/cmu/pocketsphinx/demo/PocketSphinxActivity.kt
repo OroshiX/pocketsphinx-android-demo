@@ -27,128 +27,106 @@
  *
  * ====================================================================
  */
+package edu.cmu.pocketsphinx.demo
 
-package edu.cmu.pocketsphinx.demo;
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.util.Log
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import edu.cmu.pocketsphinx.*
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
+import java.util.*
 
-import android.Manifest;
-import android.app.Activity;
-import android.content.pm.PackageManager;
-import android.os.AsyncTask;
-import android.os.Bundle;
-import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import android.widget.TextView;
-import android.widget.Toast;
+class PocketSphinxActivity : AppCompatActivity(), RecognitionListener {
+    private var recognizer: SpeechRecognizer? = null
+    private lateinit var captions: HashMap<String, Int>
+    private lateinit var captionText: TextView
+    private lateinit var resultText: TextView
 
-import java.io.File;
-import java.io.IOException;
-import java.lang.ref.WeakReference;
-import java.util.HashMap;
-
-import edu.cmu.pocketsphinx.Assets;
-import edu.cmu.pocketsphinx.Hypothesis;
-import edu.cmu.pocketsphinx.RecognitionListener;
-import edu.cmu.pocketsphinx.SpeechRecognizer;
-import edu.cmu.pocketsphinx.SpeechRecognizerSetup;
-
-import static android.widget.Toast.makeText;
-
-public class PocketSphinxActivity extends Activity implements
-        RecognitionListener {
-
-    /* Named searches allow to quickly reconfigure the decoder */
-    private static final String KWS_SEARCH = "wakeup";
-    private static final String FORECAST_SEARCH = "forecast";
-    private static final String DIGITS_SEARCH = "digits";
-    private static final String PHONE_SEARCH = "phones";
-    private static final String MENU_SEARCH = "menu";
-
-    /* Keyword we are looking for to activate menu */
-    private static final String KEYPHRASE = "oh mighty computer";
-
-    /* Used to handle permission request */
-    private static final int PERMISSIONS_REQUEST_RECORD_AUDIO = 1;
-
-    private SpeechRecognizer recognizer;
-    private HashMap<String, Integer> captions;
-
-    @Override
-    public void onCreate(Bundle state) {
-        super.onCreate(state);
+    @SuppressLint("SetTextI18n")
+    public override fun onCreate(state: Bundle?) {
+        super.onCreate(state)
 
         // Prepare the data for UI
-        captions = new HashMap<>();
-        captions.put(KWS_SEARCH, R.string.kws_caption);
-        captions.put(MENU_SEARCH, R.string.menu_caption);
-        captions.put(DIGITS_SEARCH, R.string.digits_caption);
-        captions.put(PHONE_SEARCH, R.string.phone_caption);
-        captions.put(FORECAST_SEARCH, R.string.forecast_caption);
-        setContentView(R.layout.main);
-        ((TextView) findViewById(R.id.caption_text))
-                .setText("Preparing the recognizer");
+        captions = HashMap()
+        captions[KWS_SEARCH] = R.string.kws_caption
+        captions[MENU_SEARCH] = R.string.menu_caption
+        captions[DIGITS_SEARCH] = R.string.digits_caption
+        captions[PHONE_SEARCH] = R.string.phone_caption
+        captions[FORECAST_SEARCH] = R.string.forecast_caption
+        setContentView(R.layout.main)
+        captionText = findViewById(R.id.caption_text)
+        resultText = findViewById(R.id.result_text)
+        captionText.text = "Preparing the recognizer"
 
         // Check if user has given permission to record audio
-        int permissionCheck = ContextCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.RECORD_AUDIO);
+        val permissionCheck = ContextCompat.checkSelfPermission(applicationContext,
+                Manifest.permission.RECORD_AUDIO)
         if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSIONS_REQUEST_RECORD_AUDIO);
-            return;
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO),
+                    PERMISSIONS_REQUEST_RECORD_AUDIO)
+            return
         }
         // Recognizer initialization is a time-consuming and it involves IO,
-        // so we execute it in async task
-        new SetupTask(this).execute();
+        // so we execute it in a coroutine
+        lifecycleScope.launch(IO) {
+            setupIntensive()
+        }
     }
 
-    private static class SetupTask extends AsyncTask<Void, Void, Exception> {
-        WeakReference<PocketSphinxActivity> activityReference;
-        SetupTask(PocketSphinxActivity activity) {
-            this.activityReference = new WeakReference<>(activity);
-        }
-        @Override
-        protected Exception doInBackground(Void... params) {
+    @SuppressLint("SetTextI18n")
+    private suspend fun setupIntensive() {
+        withContext(IO) {
             try {
-                Assets assets = new Assets(activityReference.get());
-                File assetDir = assets.syncAssets();
-                activityReference.get().setupRecognizer(assetDir);
-            } catch (IOException e) {
-                return e;
-            }
-            return null;
-        }
-        @Override
-        protected void onPostExecute(Exception result) {
-            if (result != null) {
-                ((TextView) activityReference.get().findViewById(R.id.caption_text))
-                        .setText("Failed to init recognizer " + result);
-            } else {
-                activityReference.get().switchSearch(KWS_SEARCH);
+
+                val assets = Assets(this@PocketSphinxActivity)
+                val assetsDir = assets.syncAssets()
+                setupRecognizer(assetsDir)
+                withContext(Main) {
+                    switchSearch(KWS_SEARCH)
+                }
+            } catch (e: IOException) {
+                withContext(Main) {
+                    captionText.text = "Failed to init recognizer $e"
+                }
             }
         }
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           @NonNull String[] permissions, @NonNull  int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
+    override fun onRequestPermissionsResult(requestCode: Int,
+                                            permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSIONS_REQUEST_RECORD_AUDIO) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Recognizer initialization is a time-consuming and it involves IO,
-                // so we execute it in async task
-                new SetupTask(this).execute();
+                // so we execute it in a coroutine
+                lifecycleScope.launch(IO) {
+                    setupIntensive()
+                }
             } else {
-                finish();
+                finish()
             }
         }
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-
-        if (recognizer != null) {
-            recognizer.cancel();
-            recognizer.shutdown();
+    public override fun onDestroy() {
+        super.onDestroy()
+        recognizer?.apply {
+            cancel()
+            shutdown()
         }
     }
 
@@ -157,113 +135,115 @@ public class PocketSphinxActivity extends Activity implements
      * keyword spotting mode we can react here, in other modes we need to wait
      * for final result in onResult.
      */
-    @Override
-    public void onPartialResult(Hypothesis hypothesis) {
-        if (hypothesis == null)
-            return;
-
-        String text = hypothesis.getHypstr();
-        switch (text) {
-            case KEYPHRASE:
-                switchSearch(MENU_SEARCH);
-                break;
-            case DIGITS_SEARCH:
-                switchSearch(DIGITS_SEARCH);
-                break;
-            case PHONE_SEARCH:
-                switchSearch(PHONE_SEARCH);
-                break;
-            case FORECAST_SEARCH:
-                switchSearch(FORECAST_SEARCH);
-                break;
-            default:
-                ((TextView) findViewById(R.id.result_text)).setText(text);
-                break;
+    override fun onPartialResult(hypothesis: Hypothesis?) {
+        if (hypothesis == null) return
+        when (val text = hypothesis.hypstr) {
+            KEYPHRASE -> switchSearch(MENU_SEARCH)
+            DIGITS_SEARCH -> switchSearch(DIGITS_SEARCH)
+            PHONE_SEARCH -> switchSearch(PHONE_SEARCH)
+            FORECAST_SEARCH -> switchSearch(FORECAST_SEARCH)
+            else            -> resultText.text = text
         }
     }
 
     /**
      * This callback is called when we stop the recognizer.
      */
-    @Override
-    public void onResult(Hypothesis hypothesis) {
-        ((TextView) findViewById(R.id.result_text)).setText("");
+    override fun onResult(hypothesis: Hypothesis?) {
+        lifecycleScope.launch(IO) {
+            delay(6000)
+            withContext(Main) {
+                resultText.text = ""
+            }
+        }
         if (hypothesis != null) {
-            String text = hypothesis.getHypstr();
-            makeText(getApplicationContext(), text, Toast.LENGTH_SHORT).show();
+            val text = hypothesis.hypstr
+            Toast.makeText(applicationContext, text, Toast.LENGTH_SHORT).show()
         }
     }
 
-    @Override
-    public void onBeginningOfSpeech() {
+    override fun onBeginningOfSpeech() {
+        Log.d(TAG, "You started speaking")
     }
 
     /**
      * We stop recognizer here to get a final result
      */
-    @Override
-    public void onEndOfSpeech() {
-        if (!recognizer.getSearchName().equals(KWS_SEARCH))
-            switchSearch(KWS_SEARCH);
+    override fun onEndOfSpeech() {
+        Log.d(TAG, "You stopped speaking")
+        if (recognizer?.searchName != KWS_SEARCH) switchSearch(KWS_SEARCH)
     }
 
-    private void switchSearch(String searchName) {
-        recognizer.stop();
+    private fun switchSearch(searchName: String) {
+        recognizer?.stop()
 
         // If we are not spotting, start listening with timeout (10000 ms or 10 seconds).
-        if (searchName.equals(KWS_SEARCH))
-            recognizer.startListening(searchName);
-        else
-            recognizer.startListening(searchName, 10000);
-
-        String caption = getResources().getString(captions.get(searchName));
-        ((TextView) findViewById(R.id.caption_text)).setText(caption);
+        if (searchName == KWS_SEARCH) recognizer?.startListening(
+                searchName) else recognizer?.startListening(searchName, 10000)
+        val caption = resources.getString(captions[searchName]!!)
+        captionText.text = caption
     }
 
-    private void setupRecognizer(File assetsDir) throws IOException {
+    @Throws(IOException::class)
+    private fun setupRecognizer(assetsDir: File) {
         // The recognizer can be configured to perform multiple searches
         // of different kind and switch between them
-
-        recognizer = SpeechRecognizerSetup.defaultSetup()
-                .setAcousticModel(new File(assetsDir, "en-us-ptm"))
-                .setDictionary(new File(assetsDir, "cmudict-en-us.dict"))
-
-                .setRawLogDir(assetsDir) // To disable logging of raw audio comment out this call (takes a lot of space on the device)
-
-                .getRecognizer();
-        recognizer.addListener(this);
+        val recognizer = SpeechRecognizerSetup.defaultSetup()
+                .setAcousticModel(File(assetsDir, "en-us-ptm"))
+                .setDictionary(File(assetsDir, "cmudict-en-us.dict"))
+                .setRawLogDir(
+                        assetsDir) // To disable logging of raw audio comment out this call (takes a lot of space on the device)
+                .recognizer
+        recognizer.addListener(this)
 
         /* In your application you might not need to add all those searches.
           They are added here for demonstration. You can leave just one.
          */
 
         // Create keyword-activation search.
-        recognizer.addKeyphraseSearch(KWS_SEARCH, KEYPHRASE);
+        recognizer.addKeyphraseSearch(KWS_SEARCH, KEYPHRASE)
 
         // Create grammar-based search for selection between demos
-        File menuGrammar = new File(assetsDir, "menu.gram");
-        recognizer.addGrammarSearch(MENU_SEARCH, menuGrammar);
+        val menuGrammar = File(assetsDir, "menu.gram")
+        recognizer.addGrammarSearch(MENU_SEARCH, menuGrammar)
 
         // Create grammar-based search for digit recognition
-        File digitsGrammar = new File(assetsDir, "digits.gram");
-        recognizer.addGrammarSearch(DIGITS_SEARCH, digitsGrammar);
+        val digitsGrammar = File(assetsDir, "digits.gram")
+        recognizer.addGrammarSearch(DIGITS_SEARCH, digitsGrammar)
 
         // Create language model search
-        File languageModel = new File(assetsDir, "weather.dmp");
-        recognizer.addNgramSearch(FORECAST_SEARCH, languageModel);
+        val languageModel = File(assetsDir, "weather.dmp")
+        recognizer.addNgramSearch(FORECAST_SEARCH, languageModel)
 
         // Phonetic search
-        File phoneticModel = new File(assetsDir, "en-phone.dmp");
-        recognizer.addAllphoneSearch(PHONE_SEARCH, phoneticModel);
+        val phoneticModel = File(assetsDir, "en-phone.dmp")
+        recognizer.addAllphoneSearch(PHONE_SEARCH, phoneticModel)
+
+        this.recognizer = recognizer
     }
 
-    @Override
-    public void onError(Exception error) {
-        ((TextView) findViewById(R.id.caption_text)).setText(error.getMessage());
+    override fun onError(error: Exception) {
+        captionText.text = error.message
     }
 
-    @Override
-    public void onTimeout() {
-        switchSearch(KWS_SEARCH);
+    override fun onTimeout() {
+        switchSearch(KWS_SEARCH)
+    }
+
+    companion object {
+        /* Named searches allow to quickly reconfigure the decoder */
+        private const val KWS_SEARCH = "wakeup"
+        private const val FORECAST_SEARCH = "forecast"
+        private const val DIGITS_SEARCH = "digits"
+        private const val PHONE_SEARCH = "phones"
+        private const val MENU_SEARCH = "menu"
+
+        /* Keyword we are looking for to activate menu */
+        private const val KEYPHRASE = "oh mighty computer"
+
+        /* Used to handle permission request */
+        private const val PERMISSIONS_REQUEST_RECORD_AUDIO = 1
+
+        private const val TAG = "PocketSphinxActivity"
     }
 }
