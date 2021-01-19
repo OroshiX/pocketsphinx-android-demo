@@ -89,9 +89,9 @@ class PocketSphinxActivity : AppCompatActivity(), RecognitionListener {
 
     @SuppressLint("SetTextI18n")
     private suspend fun setupIntensive() {
+        // Recognizer initialization is a time-consuming and it involves IO,
         withContext(IO) {
             try {
-
                 val assets = Assets(this@PocketSphinxActivity)
                 val assetsDir = assets.syncAssets()
                 setupRecognizer(assetsDir)
@@ -197,7 +197,7 @@ class PocketSphinxActivity : AppCompatActivity(), RecognitionListener {
         recognizer.addListener(this)
 
         /* In your application you might not need to add all those searches.
-          They are added here for demonstration. You can leave just one.
+         * They are added here for demonstration. You can leave just one.
          */
 
         // Create keyword-activation search.
