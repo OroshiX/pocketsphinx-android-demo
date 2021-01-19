@@ -5,10 +5,12 @@ import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import java.io.File;
 import java.io.IOException;
@@ -95,7 +97,7 @@ public class WearActivity extends Activity implements
 
     @Override
     public void onRequestPermissionsResult(int requestCode,
-                                           String[] permissions, int[] grantResults) {
+                                           @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == PERMISSIONS_REQUEST_RECORD_AUDIO) {
@@ -128,16 +130,23 @@ public class WearActivity extends Activity implements
             return;
 
         String text = hypothesis.getHypstr();
-        if (text.equals(KEYPHRASE))
-            switchSearch(MENU_SEARCH);
-        else if (text.equals(DIGITS_SEARCH))
-            switchSearch(DIGITS_SEARCH);
-        else if (text.equals(PHONE_SEARCH))
-            switchSearch(PHONE_SEARCH);
-        else if (text.equals(FORECAST_SEARCH))
-            switchSearch(FORECAST_SEARCH);
-        else
-            ((TextView) findViewById(R.id.result_text)).setText(text);
+        switch (text) {
+            case KEYPHRASE:
+                switchSearch(MENU_SEARCH);
+                break;
+            case DIGITS_SEARCH:
+                switchSearch(DIGITS_SEARCH);
+                break;
+            case PHONE_SEARCH:
+                switchSearch(PHONE_SEARCH);
+                break;
+            case FORECAST_SEARCH:
+                switchSearch(FORECAST_SEARCH);
+                break;
+            default:
+                ((TextView) findViewById(R.id.result_text)).setText(text);
+                break;
+        }
     }
 
     /**
